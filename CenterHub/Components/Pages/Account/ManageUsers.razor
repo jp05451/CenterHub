@@ -1,0 +1,78 @@
+@* CenterHub/Components/Pages/Account/ManageUsers.razor *@
+@page "/account/manage-users"
+@rendermode InteractiveServer
+@using CenterHub.Models
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<ApplicationUser> UserManager
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = Roles.Admin)]
+
+<h3 class="mb-3">帳號管理</h3>
+
+<div class="row">
+    <div class="col-12 col-lg-6">
+        <EditForm Model="_model" OnValidSubmit="CreateUser">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" />
+            <div class="mb-3"><label class="form-label">顯示名稱</label><InputText class="form-control" @bind-Value="_model.DisplayName" /></div>
+            <div class="mb-3"><label class="form-label">帳號</label><InputText class="form-control" @bind-Value="_model.UserName" /></div>
+            <div class="mb-3"><label class="form-label">Email</label><InputText class="form-control" @bind-Value="_model.Email" /></div>
+            <div class="mb-3"><label class="form-label">初始密碼</label><InputText type="password" class="form-control" @bind-Value="_model.Password" /></div>
+            <div class="mb-3">
+                <label class="form-label">角色</label>
+                <InputSelect class="form-select" @bind-Value="_model.Role">
+                    <option value="@Roles.WorkStudy">工讀生</option>
+                    <option value="@Roles.Admin">管理員</option>
+                </InputSelect>
+            </div>
+            <button type="submit" class="btn btn-primary">建立帳號</button>
+        </EditForm>
+
+        @if (_message is not null)
+        {
+            <div class="alert alert-info mt-3">@_message</div>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly NewUserModel _model = new();
+    private string? _message;
+
+    public class NewUserModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "請輸入顯示名稱")]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "請輸入帳號")]
+        public string UserName { get; set; } = string.Empty;
+
+        // Required, not just [EmailAddress]-validated-if-present: every account needs a
+        // real email so any future notification feature has somewhere to send to.
+        // Identity's own UserManager.CreateAsync does not enforce Email presence by
+        // default (only RequireUniqueEmail, which doesn't check for non-empty), so this
+        // page must be the one place that guarantees it.
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "請輸入 Email")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "請輸入有效的 Email 格式")]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "請輸入初始密碼")]
+        public string Password { get; set; } = string.Empty;
+
+        public string Role { get; set; } = Roles.WorkStudy;
+    }
+
+    private async Task CreateUser()
+    {
+        var user = new ApplicationUser { UserName = _model.UserName, DisplayName = _model.DisplayName, Email = _model.Email };
+        var result = await UserManager.CreateAsync(user, _model.Password);
+        if (result.Succeeded)
+        {
+            await UserManager.AddToRoleAsync(user, _model.Role);
+            _message = $"已建立帳號 {_model.UserName}。";
+        }
+        else
+        {
+            _message = string.Join("; ", result.Errors.Select(e => e.Description));
+        }
+    }
+}

@@ -1,0 +1,62 @@
+@* CenterHub/Components/Pages/Account/Login.razor *@
+@page "/account/login"
+@* Intentionally NOT @rendermode InteractiveServer: SignInManager.PasswordSignInAsync
+   writes the auth cookie onto the original HTTP response, which is only possible
+   during static server-side rendering. Once a page is interactive, the response
+   has already been sent to establish the SignalR circuit, so attempting to sign
+   in from an InteractiveServer-rendered component throws
+   "Headers are read-only, response has already started." *@
+@using CenterHub.Models
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NavigationManager Nav
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-6 col-lg-4">
+        <h3 class="mb-3">登入</h3>
+
+        <EditForm Model="_model" FormName="login" OnValidSubmit="DoLogin">
+            <DataAnnotationsValidator />
+            <div class="mb-3"><label class="form-label">帳號</label><InputText class="form-control" @bind-Value="_model.UserName" /></div>
+            <div class="mb-3"><label class="form-label">密碼</label><InputText type="password" class="form-control" @bind-Value="_model.Password" /></div>
+            <button type="submit" class="btn btn-primary w-100">登入</button>
+        </EditForm>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger mt-3">@_error</div>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginModel _model { get; set; } = default!;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _model ??= new();
+    }
+
+    public class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string UserName { get; set; } = string.Empty;
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private async Task DoLogin()
+    {
+        var result = await SignInManager.PasswordSignInAsync(_model.UserName, _model.Password, isPersistent: true, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            Nav.NavigateTo("/tickets", forceLoad: true);
+        }
+        else
+        {
+            _error = "帳號或密碼錯誤。";
+        }
+    }
+}

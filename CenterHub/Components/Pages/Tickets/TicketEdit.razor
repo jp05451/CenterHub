@@ -1,0 +1,146 @@
+@* CenterHub/Components/Pages/Tickets/TicketEdit.razor *@
+@page "/tickets/{Id:int}/edit"
+@rendermode InteractiveServer
+@using CenterHub.Features.Tickets
+@using CenterHub.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@inject TicketService TicketService
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthProvider
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@if (_loading)
+{
+    <p>載入中...</p>
+}
+else if (_ticket is null)
+{
+    <p>找不到這筆工單。</p>
+}
+else if (!_canManage)
+{
+    <p>你沒有權限編輯這筆工單。</p>
+}
+else
+{
+    <h3>編輯工單 #@_ticket.DailySeq（@_ticket.ShiftDate @_ticket.ShiftPeriod）</h3>
+    <p class="text-muted">值班日期與班別建立後不可更改；如需更正請改用「作廢」後重新新增。</p>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger">@_error</div>
+    }
+
+    <EditForm Model="_model" OnValidSubmit="Submit">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        <div class="mb-3"><label class="form-label">申請單位</label><InputText class="form-control" @bind-Value="_model.RequestingUnit" /></div>
+        <div class="mb-3"><label class="form-label">申請人</label><InputText class="form-control" @bind-Value="_model.RequesterName" /></div>
+        <div class="mb-3"><label class="form-label">分機/學號</label><InputText class="form-control" @bind-Value="_model.RequesterContact" /></div>
+        <div class="mb-3">
+            <label class="form-label">服務性質</label>
+            <InputSelect class="form-select" @bind-Value="_model.ServiceMode">
+                <option value="OnSite">到場處理</option>
+                <option value="Phone">電話線上</option>
+            </InputSelect>
+        </div>
+        <div class="mb-3">
+            <p class="mb-1">服務類別:</p>
+            @foreach (var category in _categories)
+            {
+                <div class="form-check form-check-inline">
+                    <input type="checkbox" class="form-check-input" id="cat-@category.Id"
+                           checked="@_model.SelectedCategoryIds.Contains(category.Id)"
+                           @onchange="e => ToggleCategory(category.Id, (bool)e.Value!)" />
+                    <label class="form-check-label" for="cat-@category.Id">@category.Name</label>
+                </div>
+            }
+        </div>
+        <div class="mb-3">
+            <label class="form-label">處理結果</label>
+            <InputSelect class="form-select" @bind-Value="_model.ResolutionStatus">
+                <option value="Completed">已完成</option>
+                <option value="Incomplete">未完成</option>
+            </InputSelect>
+        </div>
+        <div class="mb-3"><label class="form-label">服務滿意度(1-5)</label><InputNumber class="form-control" @bind-Value="_model.SatisfactionRating" /></div>
+        <div class="mb-3"><label class="form-label">服務時間(分)</label><InputNumber class="form-control" @bind-Value="_model.ServiceDurationMinutes" /></div>
+        <div class="mb-3"><label class="form-label">作業系統</label><InputText class="form-control" @bind-Value="_model.OperatingSystem" /></div>
+        <div class="mb-3"><label class="form-label">問題簡述</label><InputTextArea class="form-control" @bind-Value="_model.ProblemDescription" /></div>
+        <div class="mb-3"><label class="form-label">解決方法</label><InputTextArea class="form-control" @bind-Value="_model.SolutionDescription" /></div>
+
+        <button type="submit" class="btn btn-primary">儲存</button>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _loading = true;
+    private Ticket? _ticket;
+    private bool _canManage;
+    private string? _currentUserId;
+    private bool _isAdmin;
+    private readonly TicketFormModel _model = new();
+    private List<ServiceCategory> _categories = new();
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        _isAdmin = authState.User.IsInRole(Roles.Admin);
+
+        _categories = await TicketService.GetActiveCategoriesAsync();
+        _ticket = await TicketService.GetTicketByIdAsync(Id);
+
+        if (_ticket is not null)
+        {
+            _canManage = _isAdmin || _ticket.CreatedByUserId == _currentUserId;
+            if (_canManage)
+            {
+                _model.ShiftDate = _ticket.ShiftDate;
+                _model.ShiftPeriod = _ticket.ShiftPeriod;
+                _model.ContactTime = _ticket.ContactTime;
+                _model.RequestingUnit = _ticket.RequestingUnit;
+                _model.RequesterName = _ticket.RequesterName;
+                _model.RequesterContact = _ticket.RequesterContact;
+                _model.ServiceMode = _ticket.ServiceMode;
+                _model.SelectedCategoryIds = _ticket.Categories.Select(c => c.ServiceCategoryId).ToList();
+                _model.ResolutionStatus = _ticket.ResolutionStatus;
+                _model.SatisfactionRating = _ticket.SatisfactionRating;
+                _model.ServiceDurationMinutes = _ticket.ServiceDurationMinutes;
+                _model.OperatingSystem = _ticket.OperatingSystem;
+                _model.ProblemDescription = _ticket.ProblemDescription;
+                _model.SolutionDescription = _ticket.SolutionDescription;
+            }
+        }
+
+        _loading = false;
+    }
+
+    private void ToggleCategory(int categoryId, bool isChecked)
+    {
+        if (isChecked && !_model.SelectedCategoryIds.Contains(categoryId))
+            _model.SelectedCategoryIds.Add(categoryId);
+        else if (!isChecked)
+            _model.SelectedCategoryIds.Remove(categoryId);
+    }
+
+    private async Task Submit()
+    {
+        if (_currentUserId is null)
+            return;
+
+        try
+        {
+            await TicketService.UpdateTicketAsync(Id, _model, _currentUserId, _isAdmin);
+            Nav.NavigateTo("/tickets");
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

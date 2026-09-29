@@ -1,0 +1,122 @@
+@* CenterHub/Components/Pages/Tickets/TicketForm.razor *@
+@page "/tickets/new"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using CenterHub.Features.Tickets
+@using CenterHub.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@inject TicketService TicketService
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthProvider
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<h3 class="mb-3">新增工單</h3>
+
+<EditForm Model="_model" OnValidSubmit="Submit">
+    <DataAnnotationsValidator />
+    <ValidationSummary class="text-danger" />
+
+    <div class="mb-3"><label class="form-label">值班日期</label><InputDate class="form-control" @bind-Value="_model.ShiftDate" /></div>
+    <div class="mb-3">
+        <label class="form-label">班別</label>
+        <InputSelect class="form-select" @bind-Value="_model.ShiftPeriod">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+        </InputSelect>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">聯絡時間</label>
+        <InputText class="form-control" @bind-Value="_contactTimeText" placeholder="HH:mm" />
+        @if (_contactTimeError is not null)
+        {
+            <div class="text-danger">@_contactTimeError</div>
+        }
+    </div>
+    <div class="mb-3">
+        <label class="form-label">申請單位</label>
+        <InputText class="form-control" @bind-Value="_model.RequestingUnit" list="known-units" />
+        <datalist id="known-units">
+            @foreach (var unit in _knownUnits)
+            {
+                <option value="@unit" />
+            }
+        </datalist>
+    </div>
+    <div class="mb-3"><label class="form-label">申請人</label><InputText class="form-control" @bind-Value="_model.RequesterName" /></div>
+    <div class="mb-3"><label class="form-label">分機/學號</label><InputText class="form-control" @bind-Value="_model.RequesterContact" /></div>
+    <div class="mb-3">
+        <label class="form-label">服務性質</label>
+        <InputSelect class="form-select" @bind-Value="_model.ServiceMode">
+            <option value="OnSite">到場處理</option>
+            <option value="Phone">電話線上</option>
+        </InputSelect>
+    </div>
+    <div class="mb-3">
+        <p class="mb-1">服務類別:</p>
+        @foreach (var category in _categories)
+        {
+            <div class="form-check form-check-inline">
+                <input type="checkbox" class="form-check-input" id="cat-@category.Id"
+                       checked="@_model.SelectedCategoryIds.Contains(category.Id)"
+                       @onchange="e => ToggleCategory(category.Id, (bool)e.Value!)" />
+                <label class="form-check-label" for="cat-@category.Id">@category.Name</label>
+            </div>
+        }
+    </div>
+    <div class="mb-3">
+        <label class="form-label">處理結果</label>
+        <InputSelect class="form-select" @bind-Value="_model.ResolutionStatus">
+            <option value="Completed">已完成</option>
+            <option value="Incomplete">未完成</option>
+        </InputSelect>
+    </div>
+    <div class="mb-3"><label class="form-label">服務滿意度(1-5)</label><InputNumber class="form-control" @bind-Value="_model.SatisfactionRating" /></div>
+    <div class="mb-3"><label class="form-label">服務時間(分)</label><InputNumber class="form-control" @bind-Value="_model.ServiceDurationMinutes" /></div>
+    <div class="mb-3"><label class="form-label">作業系統</label><InputText class="form-control" @bind-Value="_model.OperatingSystem" /></div>
+    <div class="mb-3"><label class="form-label">問題簡述</label><InputTextArea class="form-control" @bind-Value="_model.ProblemDescription" /></div>
+    <div class="mb-3"><label class="form-label">解決方法</label><InputTextArea class="form-control" @bind-Value="_model.SolutionDescription" /></div>
+
+    <button type="submit" class="btn btn-primary">送出</button>
+</EditForm>
+
+@code {
+    private readonly TicketFormModel _model = new();
+    private List<ServiceCategory> _categories = new();
+    private List<string> _knownUnits = new();
+    private string _contactTimeText = DateTime.Now.ToString("HH:mm");
+    private string? _contactTimeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await TicketService.GetActiveCategoriesAsync();
+        _knownUnits = await TicketService.GetKnownRequestingUnitsAsync();
+    }
+
+    private void ToggleCategory(int categoryId, bool isChecked)
+    {
+        if (isChecked && !_model.SelectedCategoryIds.Contains(categoryId))
+            _model.SelectedCategoryIds.Add(categoryId);
+        else if (!isChecked)
+            _model.SelectedCategoryIds.Remove(categoryId);
+    }
+
+    private async Task Submit()
+    {
+        _contactTimeError = null;
+
+        if (!TimeOnly.TryParse(_contactTimeText, out var contactTime))
+        {
+            _contactTimeError = "聯絡時間格式錯誤，請輸入 HH:mm 格式（例如 14:25）";
+            return;
+        }
+
+        _model.ContactTime = contactTime;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? throw new InvalidOperationException("No authenticated user id found.");
+
+        await TicketService.CreateTicketAsync(_model, userId);
+        Nav.NavigateTo("/tickets");
+    }
+}

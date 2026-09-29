@@ -1,0 +1,17 @@
+@* CenterHub/Components/Pages/Account/Logout.razor *@
+@page "/account/logout"
+@* Intentionally NOT @rendermode InteractiveServer: SignOutAsync clears the auth
+   cookie on the original HTTP response, which requires static server-side
+   rendering for the same reason Login.razor does — see that file's comment. *@
+@using CenterHub.Models
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NavigationManager Nav
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await SignInManager.SignOutAsync();
+        Nav.NavigateTo("/account/login", forceLoad: true);
+    }
+}

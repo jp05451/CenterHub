@@ -1,0 +1,30 @@
+@* CenterHub/Components/Layout/NavMenu.razor *@
+@using Microsoft.AspNetCore.Components.Authorization
+@using CenterHub.Models
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">CenterHub</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <AuthorizeView>
+                <Authorized>
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        <li class="nav-item"><a class="nav-link" href="/tickets">工單</a></li>
+                        <AuthorizeView Roles="@Roles.Admin" Context="adminContext">
+                            <li class="nav-item"><a class="nav-link" href="/account/manage-users">帳號管理</a></li>
+                        </AuthorizeView>
+                    </ul>
+                    <span class="navbar-text text-light me-3">@context.User.Identity!.Name</span>
+                    <a class="btn btn-outline-light btn-sm" href="/account/logout">登出</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="btn btn-outline-light btn-sm ms-auto" href="/account/login">登入</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+</nav>

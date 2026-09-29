@@ -1,0 +1,11 @@
+@* CenterHub/Components/RedirectToLogin.razor — used by Routes.razor's AuthorizeRouteView
+   to send anonymous users to the login page when a routable component is
+   protected by [Authorize] and no authenticated user is present. *@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/account/login", forceLoad: true);
+    }
+}

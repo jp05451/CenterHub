@@ -1,0 +1,45 @@
+# Build artifacts
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio cache/options directory
+.vs/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Test results
+TestResults/
+
+# Runtime files
+*.pdb
+
+# Rider IDE
+.idea/
+*.sln.iml
+
+# Environment variables
+.env
+.env.local
+
+# Local secrets override (plaintext Seed:AdminPassword, etc.) — never commit
+appsettings.Local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Node modules (if used in any tooling)
+node_modules/
