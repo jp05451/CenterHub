@@ -121,7 +121,11 @@ else
                             }
                         </td>
                         <td>
-                            @if (!ticket.IsVoided && CanManage(ticket))
+                            @if (!TicketService.IsOpenForChanges(ticket))
+                            {
+                                <span class="text-muted small">已結算</span>
+                            }
+                            else if (!ticket.IsVoided && CanManage(ticket))
                             {
                                 <a class="btn btn-sm btn-outline-primary" href="/tickets/@ticket.Id/edit">編輯</a>
                                 <button class="btn btn-sm btn-outline-danger" @onclick="() => VoidTicket(ticket.Id)">作廢</button>
@@ -232,7 +236,7 @@ else
         await RunAndReloadAsync(() => TicketService.RestoreTicketAsync(ticketId, _isAdmin));
     }
 
-    // The service rejects stale actions (for example already voided); show a message
+    // The service rejects stale actions (already voided, month rolled over, ...); show a message
     // instead of letting the exception tear down the circuit.
     private async Task RunAndReloadAsync(Func<Task> action)
     {
@@ -243,7 +247,7 @@ else
         }
         catch (InvalidOperationException)
         {
-            _error = "這筆工單目前無法作廢或還原（可能已被其他人處理）。列表已重新整理。";
+            _error = "這筆工單目前無法作廢或還原（可能已被其他人處理，或該月份已結算）。列表已重新整理。";
         }
 
         await LoadTickets();

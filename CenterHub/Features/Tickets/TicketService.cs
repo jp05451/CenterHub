@@ -8,10 +8,12 @@ namespace CenterHub.Features.Tickets;
 public class TicketService
 {
     private readonly AppDbContext _db;
+    private readonly TimeProvider _time;
 
-    public TicketService(AppDbContext db)
+    public TicketService(AppDbContext db, TimeProvider? timeProvider = null)
     {
         _db = db;
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     private const int PmStartHour = 13;
@@ -74,6 +76,11 @@ public class TicketService
             throw new InvalidOperationException("A voided ticket cannot be edited; an admin must restore it first.");
         }
 
+        if (!IsOpenForChanges(ticket))
+        {
+            throw new InvalidOperationException("This ticket's month is closed and can no longer be edited.");
+        }
+
         // ShiftDate/ShiftPeriod/DailySeq are intentionally left untouched here — they drive
         // the per-day ticket numbering, so "moving" a ticket to a different shift after the
         // fact is out of scope; use void + a new ticket for that instead.
@@ -115,6 +122,11 @@ public class TicketService
             throw new InvalidOperationException("Ticket is already voided.");
         }
 
+        if (!IsOpenForChanges(ticket))
+        {
+            throw new InvalidOperationException("This ticket's month is closed and can no longer be voided.");
+        }
+
         ticket.IsVoided = true;
         ticket.VoidedByUserId = requestingUserId;
         ticket.VoidedAt = DateTime.UtcNow;
@@ -138,11 +150,31 @@ public class TicketService
             throw new InvalidOperationException("Ticket is not voided.");
         }
 
+        if (!IsOpenForChanges(ticket))
+        {
+            throw new InvalidOperationException("This ticket's month is closed and can no longer be restored.");
+        }
+
         ticket.IsVoided = false;
         ticket.VoidedByUserId = null;
         ticket.VoidedAt = null;
 
         await _db.SaveChangesAsync();
+    }
+
+    // Reports are exported early each month, so a month's tickets are frozen once it is over and the grace
+    // period has passed: editing, voiding or restoring them later would silently diverge from the report
+    // that was already handed out. The previous month stays open through PreviousMonthLastOpenDay.
+    private const int PreviousMonthLastOpenDay = 10;
+
+    public bool IsOpenForChanges(Ticket ticket)
+    {
+        var today = DateOnly.FromDateTime(_time.GetLocalNow().DateTime);
+        var startOfThisMonth = new DateOnly(today.Year, today.Month, 1);
+        var openFrom = today.Day <= PreviousMonthLastOpenDay ? startOfThisMonth.AddMonths(-1) : startOfThisMonth;
+        var openUntil = startOfThisMonth.AddMonths(1);
+
+        return ticket.ShiftDate >= openFrom && ticket.ShiftDate < openUntil;
     }
 
     public async Task<Ticket?> GetTicketByIdAsync(int ticketId)

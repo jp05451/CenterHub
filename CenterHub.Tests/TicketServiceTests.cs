@@ -30,6 +30,20 @@ public class TicketServiceTests : IDisposable
         _connection.Dispose();
     }
 
+    private TicketService ServiceAt(int year, int month, int day) =>
+        new(_db, new FixedTimeProvider(new DateTimeOffset(year, month, day, 12, 0, 0, TimeSpan.Zero)));
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _now;
+
+        public FixedTimeProvider(DateTimeOffset now) => _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+    }
+
     private static TicketFormModel MakeModel(DateOnly date, ShiftPeriod period) => new()
     {
         ShiftDate = date,
@@ -300,7 +314,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task UpdateTicketAsync_ByOwner_UpdatesContentAndStampsLastEditedBy()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         var edit = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
@@ -318,7 +332,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task UpdateTicketAsync_DoesNotChangeShiftDatePeriodOrDailySeq()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         var edit = MakeModel(new DateOnly(2099, 1, 1), ShiftPeriod.PM);
@@ -332,7 +346,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task UpdateTicketAsync_ByNonOwnerNonAdmin_Throws()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -342,7 +356,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task UpdateTicketAsync_ByAdmin_CanEditAnyonesTicket()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         var edit = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
@@ -356,7 +370,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task VoidTicketAsync_ByOwner_MarksVoidedWithAuditFields()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
@@ -370,7 +384,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task VoidTicketAsync_ByNonOwnerNonAdmin_Throws()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -380,7 +394,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task VoidTicketAsync_ByAdmin_CanVoidAnyonesTicket()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
 
         await service.VoidTicketAsync(ticket.Id, "admin-1", isAdmin: true);
@@ -393,7 +407,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task GetTicketsAsync_ExcludesVoidedTicketsByDefault()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -405,7 +419,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task GetTicketsAsync_IncludesVoidedTickets_WhenRequested()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 9, 15);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -417,7 +431,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task UpdateTicketAsync_OnVoidedTicket_ThrowsEvenForAdmin()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 10, 20);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -431,10 +445,41 @@ public class TicketServiceTests : IDisposable
         Assert.Null(saved.LastEditedByUserId);
     }
 
+    [Theory]
+    [InlineData(2026, 9, 30)]
+    [InlineData(2025, 10, 15)]
+    public async Task UpdateTicketAsync_TicketOutsideCurrentMonth_ThrowsEvenForAdmin(int year, int month, int day)
+    {
+        var service = ServiceAt(2026, 10, 20);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(year, month, day), ShiftPeriod.AM), "user-1");
+
+        var edit = MakeModel(new DateOnly(year, month, day), ShiftPeriod.AM);
+        edit.ProblemDescription = "報表已匯出，不該被改";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateTicketAsync(ticket.Id, edit, "admin-1", isAdmin: true));
+        var saved = await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id);
+        Assert.NotEqual("報表已匯出，不該被改", saved.ProblemDescription);
+        Assert.Null(saved.LastEditedByUserId);
+    }
+
+    [Fact]
+    public async Task UpdateTicketAsync_FirstDayOfCurrentMonth_Succeeds()
+    {
+        var service = ServiceAt(2026, 10, 20);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 1), ShiftPeriod.AM), "user-1");
+
+        var edit = MakeModel(new DateOnly(2026, 10, 1), ShiftPeriod.AM);
+        edit.ProblemDescription = "月初當天仍可更正";
+        var updated = await service.UpdateTicketAsync(ticket.Id, edit, "user-1", isAdmin: false);
+
+        Assert.Equal("月初當天仍可更正", updated.ProblemDescription);
+    }
+
     [Fact]
     public async Task VoidTicketAsync_AlreadyVoided_ThrowsAndKeepsOriginalAudit()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 10, 20);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -447,11 +492,11 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task VoidTicketAsync_VoidedMeanwhileFromAnotherSession_ThrowsInsteadOfOverwritingAudit()
     {
-        var first = new TicketService(_db);
+        var first = ServiceAt(2026, 10, 20);
         var ticket = await first.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
 
         using var otherDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
-        var other = new TicketService(otherDb);
+        var other = new TicketService(otherDb, new FixedTimeProvider(new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero)));
         await other.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -461,9 +506,77 @@ public class TicketServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task VoidTicketAsync_FirstDayOfCurrentMonth_Succeeds()
+    {
+        var service = ServiceAt(2026, 10, 20);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 1), ShiftPeriod.AM), "user-1");
+
+        await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        Assert.True((await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id)).IsVoided);
+    }
+
+    [Theory]
+    [InlineData(2026, 9, 30)]
+    [InlineData(2025, 10, 15)]
+    public async Task VoidTicketAsync_TicketOutsideCurrentMonth_ThrowsEvenForAdmin(int year, int month, int day)
+    {
+        var service = ServiceAt(2026, 10, 20);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(year, month, day), ShiftPeriod.AM), "user-1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.VoidTicketAsync(ticket.Id, "admin-1", isAdmin: true));
+        Assert.False((await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id)).IsVoided);
+    }
+
+    [Theory]
+    [InlineData(2026, 10, 20, 2026, 10, 1, true)]
+    [InlineData(2026, 10, 20, 2026, 10, 31, true)]
+    [InlineData(2026, 10, 20, 2026, 9, 30, false)]
+    [InlineData(2026, 10, 20, 2026, 11, 1, false)]
+    [InlineData(2026, 10, 20, 2025, 10, 20, false)]
+    [InlineData(2026, 10, 1, 2026, 9, 1, true)]
+    [InlineData(2026, 10, 10, 2026, 9, 30, true)]
+    [InlineData(2026, 10, 10, 2026, 8, 31, false)]
+    [InlineData(2026, 10, 11, 2026, 9, 30, false)]
+    [InlineData(2027, 1, 5, 2026, 12, 31, true)]
+    [InlineData(2027, 1, 5, 2026, 11, 30, false)]
+    [InlineData(2027, 1, 11, 2026, 12, 31, false)]
+    public void IsOpenForChanges_IsCurrentMonthPlusPreviousMonthUntilTheTenth(
+        int nowYear, int nowMonth, int nowDay, int ticketYear, int ticketMonth, int ticketDay, bool expected)
+    {
+        var service = ServiceAt(nowYear, nowMonth, nowDay);
+
+        var ticket = new Ticket { ShiftDate = new DateOnly(ticketYear, ticketMonth, ticketDay) };
+
+        Assert.Equal(expected, service.IsOpenForChanges(ticket));
+    }
+
+    [Fact]
+    public async Task PreviousMonthTicket_CanBeEditedAndVoidedThroughTheTenth_ThenLocksOnTheEleventh()
+    {
+        var onTheTenth = ServiceAt(2026, 10, 10);
+        var ticket = await onTheTenth.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 30), ShiftPeriod.AM), "user-1");
+        var edit = MakeModel(new DateOnly(2026, 9, 30), ShiftPeriod.AM);
+        edit.ProblemDescription = "寬限期內更正";
+
+        var updated = await onTheTenth.UpdateTicketAsync(ticket.Id, edit, "user-1", isAdmin: false);
+        await onTheTenth.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        Assert.Equal("寬限期內更正", updated.ProblemDescription);
+        Assert.True((await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id)).IsVoided);
+
+        var onTheEleventh = ServiceAt(2026, 10, 11);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            onTheEleventh.RestoreTicketAsync(ticket.Id, isAdmin: true));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            onTheEleventh.UpdateTicketAsync(ticket.Id, edit, "admin-1", isAdmin: true));
+    }
+
+    [Fact]
     public async Task RestoreTicketAsync_ByAdmin_UnvoidsTicketAndClearsVoidFields()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 10, 20);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -479,7 +592,7 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task RestoreTicketAsync_ByCreatorWhoIsNotAdmin_Throws()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 10, 20);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
         await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
 
@@ -491,11 +604,24 @@ public class TicketServiceTests : IDisposable
     [Fact]
     public async Task RestoreTicketAsync_TicketThatIsNotVoided_Throws()
     {
-        var service = new TicketService(_db);
+        var service = ServiceAt(2026, 10, 20);
         var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.RestoreTicketAsync(ticket.Id, isAdmin: true));
     }
 
+    [Fact]
+    public async Task RestoreTicketAsync_AfterTheGracePeriodHasEnded_Throws()
+    {
+        var october = ServiceAt(2026, 10, 20);
+        var ticket = await october.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+        await october.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        var november = ServiceAt(2026, 11, 11);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            november.RestoreTicketAsync(ticket.Id, isAdmin: true));
+        Assert.True((await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id)).IsVoided);
+    }
 }
