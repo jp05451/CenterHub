@@ -62,10 +62,16 @@ public class TicketService
             .Include(t => t.Categories)
             .FirstOrDefaultAsync(t => t.Id == ticketId)
             ?? throw new InvalidOperationException($"Ticket {ticketId} not found.");
+        await _db.Entry(ticket).ReloadAsync();
 
         if (!isAdmin && ticket.CreatedByUserId != requestingUserId)
         {
             throw new InvalidOperationException("Only the ticket's creator or an admin may edit it.");
+        }
+
+        if (ticket.IsVoided)
+        {
+            throw new InvalidOperationException("A voided ticket cannot be edited; an admin must restore it first.");
         }
 
         // ShiftDate/ShiftPeriod/DailySeq are intentionally left untouched here — they drive
@@ -97,15 +103,44 @@ public class TicketService
     {
         var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == ticketId)
             ?? throw new InvalidOperationException($"Ticket {ticketId} not found.");
+        await _db.Entry(ticket).ReloadAsync();
 
         if (!isAdmin && ticket.CreatedByUserId != requestingUserId)
         {
             throw new InvalidOperationException("Only the ticket's creator or an admin may void it.");
         }
 
+        if (ticket.IsVoided)
+        {
+            throw new InvalidOperationException("Ticket is already voided.");
+        }
+
         ticket.IsVoided = true;
         ticket.VoidedByUserId = requestingUserId;
         ticket.VoidedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task RestoreTicketAsync(int ticketId, bool isAdmin)
+    {
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == ticketId)
+            ?? throw new InvalidOperationException($"Ticket {ticketId} not found.");
+        await _db.Entry(ticket).ReloadAsync();
+
+        if (!isAdmin)
+        {
+            throw new InvalidOperationException("Only an admin may restore a voided ticket.");
+        }
+
+        if (!ticket.IsVoided)
+        {
+            throw new InvalidOperationException("Ticket is not voided.");
+        }
+
+        ticket.IsVoided = false;
+        ticket.VoidedByUserId = null;
+        ticket.VoidedAt = null;
 
         await _db.SaveChangesAsync();
     }
@@ -119,7 +154,9 @@ public class TicketService
 
     public async Task<List<Ticket>> GetTicketsAsync(TicketFilter filter)
     {
+        // Read-only listing: untracked so another session's void/restore shows up on the next search.
         var query = _db.Tickets
+            .AsNoTracking()
             .Include(t => t.Categories)
             .AsQueryable();
 

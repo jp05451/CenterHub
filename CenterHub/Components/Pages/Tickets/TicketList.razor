@@ -77,6 +77,11 @@
     </div>
 </form>
 
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
 @if (_tickets is null)
 {
     <p>載入中...</p>
@@ -121,6 +126,10 @@ else
                                 <a class="btn btn-sm btn-outline-primary" href="/tickets/@ticket.Id/edit">編輯</a>
                                 <button class="btn btn-sm btn-outline-danger" @onclick="() => VoidTicket(ticket.Id)">作廢</button>
                             }
+                            else if (ticket.IsVoided && _isAdmin)
+                            {
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => RestoreTicket(ticket.Id)">還原</button>
+                            }
                         </td>
                     </tr>
                 }
@@ -144,6 +153,7 @@ else
     private string _filterCategoryId = "";
     private string _filterStatus = "";
     private bool _includeVoided;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,7 +220,32 @@ else
         if (!confirmed || _currentUserId is null)
             return;
 
-        await TicketService.VoidTicketAsync(ticketId, _currentUserId, _isAdmin);
+        await RunAndReloadAsync(() => TicketService.VoidTicketAsync(ticketId, _currentUserId, _isAdmin));
+    }
+
+    private async Task RestoreTicket(int ticketId)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "確定要還原這筆工單嗎？");
+        if (!confirmed)
+            return;
+
+        await RunAndReloadAsync(() => TicketService.RestoreTicketAsync(ticketId, _isAdmin));
+    }
+
+    // The service rejects stale actions (for example already voided); show a message
+    // instead of letting the exception tear down the circuit.
+    private async Task RunAndReloadAsync(Func<Task> action)
+    {
+        _error = null;
+        try
+        {
+            await action();
+        }
+        catch (InvalidOperationException)
+        {
+            _error = "這筆工單目前無法作廢或還原（可能已被其他人處理）。列表已重新整理。";
+        }
+
         await LoadTickets();
     }
 }

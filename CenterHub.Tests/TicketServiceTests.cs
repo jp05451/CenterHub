@@ -413,4 +413,89 @@ public class TicketServiceTests : IDisposable
 
         Assert.Single(results);
     }
+
+    [Fact]
+    public async Task UpdateTicketAsync_OnVoidedTicket_ThrowsEvenForAdmin()
+    {
+        var service = new TicketService(_db);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+        await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        var edit = MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM);
+        edit.ProblemDescription = "不該寫進去";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateTicketAsync(ticket.Id, edit, "admin-1", isAdmin: true));
+        var saved = await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id);
+        Assert.NotEqual("不該寫進去", saved.ProblemDescription);
+        Assert.Null(saved.LastEditedByUserId);
+    }
+
+    [Fact]
+    public async Task VoidTicketAsync_AlreadyVoided_ThrowsAndKeepsOriginalAudit()
+    {
+        var service = new TicketService(_db);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+        await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.VoidTicketAsync(ticket.Id, "admin-1", isAdmin: true));
+        var saved = await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id);
+        Assert.Equal("user-1", saved.VoidedByUserId);
+    }
+
+    [Fact]
+    public async Task VoidTicketAsync_VoidedMeanwhileFromAnotherSession_ThrowsInsteadOfOverwritingAudit()
+    {
+        var first = new TicketService(_db);
+        var ticket = await first.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+
+        using var otherDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+        var other = new TicketService(otherDb);
+        await other.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            first.VoidTicketAsync(ticket.Id, "admin-1", isAdmin: true));
+        var saved = await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id);
+        Assert.Equal("user-1", saved.VoidedByUserId);
+    }
+
+    [Fact]
+    public async Task RestoreTicketAsync_ByAdmin_UnvoidsTicketAndClearsVoidFields()
+    {
+        var service = new TicketService(_db);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+        await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        await service.RestoreTicketAsync(ticket.Id, isAdmin: true);
+
+        var saved = await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id);
+        Assert.False(saved.IsVoided);
+        Assert.Null(saved.VoidedByUserId);
+        Assert.Null(saved.VoidedAt);
+        Assert.Single(await service.GetTicketsAsync(new TicketFilter()));
+    }
+
+    [Fact]
+    public async Task RestoreTicketAsync_ByCreatorWhoIsNotAdmin_Throws()
+    {
+        var service = new TicketService(_db);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+        await service.VoidTicketAsync(ticket.Id, "user-1", isAdmin: false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RestoreTicketAsync(ticket.Id, isAdmin: false));
+        Assert.True((await _db.Tickets.AsNoTracking().FirstAsync(t => t.Id == ticket.Id)).IsVoided);
+    }
+
+    [Fact]
+    public async Task RestoreTicketAsync_TicketThatIsNotVoided_Throws()
+    {
+        var service = new TicketService(_db);
+        var ticket = await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 10, 8), ShiftPeriod.AM), "user-1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RestoreTicketAsync(ticket.Id, isAdmin: true));
+    }
+
 }

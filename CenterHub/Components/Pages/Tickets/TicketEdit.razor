@@ -21,6 +21,10 @@ else if (!_canManage)
 {
     <p>你沒有權限編輯這筆工單。</p>
 }
+else if (_ticket.IsVoided)
+{
+    <p>這筆工單已作廢，無法編輯。如需修改，請管理員先在列表還原。</p>
+}
 else
 {
     <h3>編輯工單 #@_ticket.DailySeq（@_ticket.ShiftDate @_ticket.ShiftPeriod）</h3>
