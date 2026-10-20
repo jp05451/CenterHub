@@ -54,6 +54,10 @@
         {
             Nav.NavigateTo("/tickets", forceLoad: true);
         }
+        else if (result.IsLockedOut)
+        {
+            _error = "此帳號已停用，或因多次輸入錯誤暫時鎖定，請聯絡管理員。";
+        }
         else
         {
             _error = "帳號或密碼錯誤。";

@@ -19,6 +19,7 @@
                         </AuthorizeView>
                     </ul>
                     <span class="navbar-text text-light me-3">@context.User.Identity!.Name</span>
+                    <a class="btn btn-outline-light btn-sm me-2" href="/account/change-password">修改密碼</a>
                     <a class="btn btn-outline-light btn-sm" href="/account/logout">登出</a>
                 </Authorized>
                 <NotAuthorized>

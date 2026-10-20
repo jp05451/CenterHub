@@ -1,5 +1,6 @@
 using CenterHub.Data;
 using CenterHub.Models;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,9 +26,16 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
 
+// Cookie logins are re-checked against the security stamp every minute, so a disabled or
+// password-reset account is kicked out quickly (Identity's default is 30 minutes).
+builder.Services.Configure<SecurityStampValidatorOptions>(options =>
+    options.ValidationInterval = TimeSpan.FromMinutes(1));
+
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<AuthenticationStateProvider, CenterHub.Features.Accounts.RevalidatingAuthStateProvider>();
 
 builder.Services.AddScoped<CenterHub.Features.Tickets.TicketService>();
+builder.Services.AddScoped<CenterHub.Features.Accounts.AccountService>();
 
 var app = builder.Build();
 
