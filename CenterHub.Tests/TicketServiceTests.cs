@@ -114,13 +114,145 @@ public class TicketServiceTests : IDisposable
 
         var results = await service.GetTicketsAsync(new TicketFilter
         {
-            ShiftDate = new DateOnly(2026, 9, 8),
+            DateFrom = new DateOnly(2026, 9, 8),
+            DateTo = new DateOnly(2026, 9, 8),
             ResolutionStatus = ResolutionStatus.Completed
         });
 
         var ticket = Assert.Single(results);
         Assert.Equal(new DateOnly(2026, 9, 8), ticket.ShiftDate);
         Assert.Equal(ResolutionStatus.Completed, ticket.ResolutionStatus);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_FiltersByDateRange_Inclusive()
+    {
+        var service = new TicketService(_db);
+        foreach (var day in new[] { 7, 8, 9, 10 })
+            await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, day), ShiftPeriod.AM), "user-1");
+
+        var results = await service.GetTicketsAsync(new TicketFilter
+        {
+            DateFrom = new DateOnly(2026, 9, 8),
+            DateTo = new DateOnly(2026, 9, 9)
+        });
+
+        Assert.Equal(new[] { 9, 8 }, results.Select(t => t.ShiftDate.Day));
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_DateFromOnly_IsOpenEnded()
+    {
+        var service = new TicketService(_db);
+        foreach (var day in new[] { 7, 8, 9 })
+            await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, day), ShiftPeriod.AM), "user-1");
+
+        var results = await service.GetTicketsAsync(new TicketFilter { DateFrom = new DateOnly(2026, 9, 8) });
+
+        Assert.Equal(2, results.Count);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_FiltersByRequesterName_PartialMatch()
+    {
+        var service = new TicketService(_db);
+        var match = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        match.RequesterName = "王小明";
+        await service.CreateTicketAsync(match, "user-1");
+        var other = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        other.RequesterName = "李大華";
+        await service.CreateTicketAsync(other, "user-1");
+
+        var results = await service.GetTicketsAsync(new TicketFilter { RequesterName = "小明" });
+
+        Assert.Equal("王小明", Assert.Single(results).RequesterName);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_FiltersByRequesterContact_PartialMatch()
+    {
+        var service = new TicketService(_db);
+        var extension = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        extension.RequesterContact = "分機 1234";
+        await service.CreateTicketAsync(extension, "user-1");
+        var studentId = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        studentId.RequesterContact = "M11404145";
+        await service.CreateTicketAsync(studentId, "user-1");
+        var noContact = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        noContact.RequesterContact = null;
+        await service.CreateTicketAsync(noContact, "user-1");
+
+        var byExtension = await service.GetTicketsAsync(new TicketFilter { RequesterContact = "1234" });
+        var byStudentId = await service.GetTicketsAsync(new TicketFilter { RequesterContact = "11404145" });
+
+        Assert.Equal("分機 1234", Assert.Single(byExtension).RequesterContact);
+        Assert.Equal("M11404145", Assert.Single(byStudentId).RequesterContact);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_FiltersByHandler()
+    {
+        var service = new TicketService(_db);
+        await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
+        await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-2");
+
+        var results = await service.GetTicketsAsync(new TicketFilter { CreatedByUserId = "user-2" });
+
+        Assert.Equal("user-2", Assert.Single(results).CreatedByUserId);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_CombinesAllConditionsWithAnd()
+    {
+        var service = new TicketService(_db);
+        var target = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        target.RequesterName = "王小明";
+        target.RequesterContact = "1234";
+        await service.CreateTicketAsync(target, "user-1");
+
+        var wrongHandler = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        wrongHandler.RequesterName = "王小明";
+        wrongHandler.RequesterContact = "1234";
+        await service.CreateTicketAsync(wrongHandler, "user-2");
+
+        var wrongDate = MakeModel(new DateOnly(2026, 9, 20), ShiftPeriod.AM);
+        wrongDate.RequesterName = "王小明";
+        wrongDate.RequesterContact = "1234";
+        await service.CreateTicketAsync(wrongDate, "user-1");
+
+        var wrongContact = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        wrongContact.RequesterName = "王小明";
+        wrongContact.RequesterContact = "9999";
+        await service.CreateTicketAsync(wrongContact, "user-1");
+
+        var results = await service.GetTicketsAsync(new TicketFilter
+        {
+            DateFrom = new DateOnly(2026, 9, 1),
+            DateTo = new DateOnly(2026, 9, 10),
+            RequesterName = "小明",
+            RequesterContact = "1234",
+            CreatedByUserId = "user-1"
+        });
+
+        var ticket = Assert.Single(results);
+        Assert.Equal("user-1", ticket.CreatedByUserId);
+        Assert.Equal("1234", ticket.RequesterContact);
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_BlankTextFilters_AreIgnored()
+    {
+        var service = new TicketService(_db);
+        await service.CreateTicketAsync(MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM), "user-1");
+
+        var results = await service.GetTicketsAsync(new TicketFilter
+        {
+            RequesterName = "  ",
+            RequesterContact = "",
+            RequestingUnit = " "
+        });
+
+        Assert.Single(results);
     }
 
     [Fact]

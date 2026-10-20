@@ -119,11 +119,32 @@ public class TicketService
         if (!filter.IncludeVoided)
             query = query.Where(t => !t.IsVoided);
 
-        if (filter.ShiftDate is { } shiftDate)
-            query = query.Where(t => t.ShiftDate == shiftDate);
+        if (filter.DateFrom is { } dateFrom)
+            query = query.Where(t => t.ShiftDate >= dateFrom);
+
+        if (filter.DateTo is { } dateTo)
+            query = query.Where(t => t.ShiftDate <= dateTo);
 
         if (!string.IsNullOrWhiteSpace(filter.RequestingUnit))
-            query = query.Where(t => t.RequestingUnit.Contains(filter.RequestingUnit));
+        {
+            var unit = filter.RequestingUnit.Trim();
+            query = query.Where(t => t.RequestingUnit.Contains(unit));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.RequesterName))
+        {
+            var name = filter.RequesterName.Trim();
+            query = query.Where(t => t.RequesterName.Contains(name));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.RequesterContact))
+        {
+            var contact = filter.RequesterContact.Trim();
+            query = query.Where(t => t.RequesterContact != null && t.RequesterContact.Contains(contact));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.CreatedByUserId))
+            query = query.Where(t => t.CreatedByUserId == filter.CreatedByUserId);
 
         if (filter.ServiceCategoryId is { } categoryId)
             query = query.Where(t => t.Categories.Any(c => c.ServiceCategoryId == categoryId));
