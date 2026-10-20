@@ -14,6 +14,13 @@ public class TicketService
         _db = db;
     }
 
+    private const int PmStartHour = 13;
+
+    // Before 13:00 is the morning shift (including anything earlier than the 8:00 start), from 13:00 on is
+    // the afternoon shift (including anything after 17:00). Every time maps to exactly one shift.
+    public static ShiftPeriod GetShiftPeriod(TimeOnly contactTime) =>
+        contactTime.Hour < PmStartHour ? ShiftPeriod.AM : ShiftPeriod.PM;
+
     public async Task<Ticket> CreateTicketAsync(TicketFormModel model, string createdByUserId)
     {
         var maxSeq = await _db.Tickets
@@ -25,7 +32,7 @@ public class TicketService
         {
             DailySeq = maxSeq + 1,
             ShiftDate = model.ShiftDate,
-            ShiftPeriod = model.ShiftPeriod,
+            ShiftPeriod = GetShiftPeriod(model.ContactTime),
             ContactTime = model.ContactTime,
             RequestingUnit = model.RequestingUnit,
             RequesterName = model.RequesterName,

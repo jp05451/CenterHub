@@ -33,8 +33,7 @@ public class TicketServiceTests : IDisposable
     private static TicketFormModel MakeModel(DateOnly date, ShiftPeriod period) => new()
     {
         ShiftDate = date,
-        ShiftPeriod = period,
-        ContactTime = new TimeOnly(14, 25),
+        ContactTime = period == ShiftPeriod.AM ? new TimeOnly(10, 0) : new TimeOnly(14, 25),
         RequestingUnit = "材料系",
         RequesterName = "馬同學",
         RequesterContact = "M11404145",
@@ -47,6 +46,32 @@ public class TicketServiceTests : IDisposable
         ProblemDescription = "忘記M365密碼",
         SolutionDescription = "重設M365密碼"
     };
+
+    [Theory]
+    [InlineData(7, 30, ShiftPeriod.AM)]
+    [InlineData(8, 0, ShiftPeriod.AM)]
+    [InlineData(12, 59, ShiftPeriod.AM)]
+    [InlineData(13, 0, ShiftPeriod.PM)]
+    [InlineData(17, 59, ShiftPeriod.PM)]
+    [InlineData(20, 0, ShiftPeriod.PM)]
+    public void GetShiftPeriod_SplitsAtOnePm(int hour, int minute, ShiftPeriod expected)
+    {
+        Assert.Equal(expected, TicketService.GetShiftPeriod(new TimeOnly(hour, minute)));
+    }
+
+    [Theory]
+    [InlineData(9, 15, ShiftPeriod.AM)]
+    [InlineData(14, 25, ShiftPeriod.PM)]
+    public async Task CreateTicketAsync_DerivesShiftPeriodFromContactTime(int hour, int minute, ShiftPeriod expected)
+    {
+        var service = new TicketService(_db);
+        var model = MakeModel(new DateOnly(2026, 9, 8), ShiftPeriod.AM);
+        model.ContactTime = new TimeOnly(hour, minute);
+
+        var ticket = await service.CreateTicketAsync(model, "user-1");
+
+        Assert.Equal(expected, ticket.ShiftPeriod);
+    }
 
     [Fact]
     public async Task CreateTicketAsync_FirstTicketOfDay_GetsSeqOne()

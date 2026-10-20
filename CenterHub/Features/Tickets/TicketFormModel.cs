@@ -10,9 +10,6 @@ public class TicketFormModel
     public DateOnly ShiftDate { get; set; } = DateOnly.FromDateTime(DateTime.Now);
 
     [Required]
-    public ShiftPeriod ShiftPeriod { get; set; }
-
-    [Required]
     public TimeOnly ContactTime { get; set; } = TimeOnly.FromDateTime(DateTime.Now);
 
     [Required(ErrorMessage = "請輸入申請單位")]

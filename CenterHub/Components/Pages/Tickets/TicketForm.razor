@@ -18,18 +18,15 @@
 
     <div class="mb-3"><label class="form-label">值班日期</label><InputDate class="form-control" @bind-Value="_model.ShiftDate" /></div>
     <div class="mb-3">
-        <label class="form-label">班別</label>
-        <InputSelect class="form-select" @bind-Value="_model.ShiftPeriod">
-            <option value="AM">AM</option>
-            <option value="PM">PM</option>
-        </InputSelect>
-    </div>
-    <div class="mb-3">
         <label class="form-label">聯絡時間</label>
-        <InputText class="form-control" @bind-Value="_contactTimeText" placeholder="HH:mm" />
+        <input type="text" class="form-control" @bind="_contactTimeText" @bind:event="oninput" placeholder="HH:mm" />
         @if (_contactTimeError is not null)
         {
             <div class="text-danger">@_contactTimeError</div>
+        }
+        else if (TimeOnly.TryParse(_contactTimeText, out var typedTime))
+        {
+            <div class="form-text">班別：@TicketService.GetShiftPeriod(typedTime)（依聯絡時間自動判斷）</div>
         }
     </div>
     <div class="mb-3">
